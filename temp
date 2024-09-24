@@ -1,0 +1,89 @@
+import openpyxl
+import os
+
+# Function to read data from the Excel file and group by document
+def read_excel_file_grouped_by_document(file_path):
+    wb = openpyxl.load_workbook(file_path)
+    ws = wb.active
+
+    document_paragraphs = {}
+
+    # Reading data starting from row 2 (skip headers)
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        # Unpack the row (assume the row is in the order: Number, Document, Paragraph, Text Styles, Paragraph Styles)
+        row_number, document_name, paragraph, text_style, paragraph_style = row
+        
+        if paragraph:  # Skip rows with empty paragraphs
+            if document_name not in document_paragraphs:
+                document_paragraphs[document_name] = []
+            document_paragraphs[document_name].append({
+                "paragraph": paragraph,
+                "text_style": text_style,
+                "paragraph_style": paragraph_style
+            })
+    
+    return document_paragraphs
+
+# Function to create a single .jld file for each Word document
+def create_jld_files_grouped_by_document(document_paragraphs, template_file, output_folder):
+    # Ensure the output folder exists
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    # Read the template file content once
+    with open(template_file, 'r') as file:
+        template_content = file.read()
+
+    # Process each document and its associated paragraphs
+    for document_name, paragraphs in document_paragraphs.items():
+        paragraph_style_set = set()
+        text_style_set = set()
+        
+        # Extract unique paragraph styles and text styles
+        for para_info in paragraphs:
+            paragraph_style_set.add(para_info['paragraph_style'])
+            text_style_set.add(para_info['text_style'])
+        
+        # Create mappings of paragraph styles and text styles to integers
+        para_style_mapping = {style: i + 1 for i, style in enumerate(paragraph_style_set)}
+        text_style_mapping = {style: i + 1 for i, style in enumerate(text_style_set)}
+
+        # Create the content array following the structure:
+        # [paranum, textnum, contentval, paranum2, textnum2, contentval2...]
+        content_array = []
+        for para_info in paragraphs:
+            paranum = para_style_mapping[para_info['paragraph_style']]
+            textnum = text_style_mapping[para_info['text_style']]
+            content_array.extend([paranum, textnum, para_info['paragraph']])
+
+        # Replace the template content
+        combined_paragraph_styles = str(list(paragraph_style_set)).replace("'", "")
+        combined_text_styles = str(list(text_style_set)).replace("'", "")
+        combined_array_str = str(content_array).replace("'", "")
+
+        modified_content = template_content.replace("paraupdate", combined_paragraph_styles)
+        modified_content = modified_content.replace("textupdate", combined_text_styles)
+        modified_content = modified_content.replace("content", combined_array_str)
+
+        # Create the output filename
+        output_filename = f"{document_name}.jld"
+        output_path = os.path.join(output_folder, output_filename)
+
+        # Write the modified content to the .jld file
+        with open(output_path, 'w') as output_file:
+            output_file.write(modified_content)
+
+        print(f"Created file: {output_path}")
+
+# Example usage
+excel_file_path = 'output_paragraphs_with_styles.xlsx'  # Path to your Excel file
+template_file = 'template.txt'  # Path to your template text file
+output_folder = 'jld_files'  # Folder where .jld files will be saved
+
+# Read data from Excel file and group by document
+document_paragraphs = read_excel_file_grouped_by_document(excel_file_path)
+
+# Create .jld files grouped by document
+create_jld_files_grouped_by_document(document_paragraphs, template_file, output_folder)
+
+print(f"JLD files generated for each document in {output_folder}")
